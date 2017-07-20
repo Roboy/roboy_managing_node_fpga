@@ -32,7 +32,7 @@
 ################################################################################
 # Handle includes
 SET(CMAKE_MODULE_PATH "${OPLK_BASE_DIR}/cmake" ${CMAKE_MODULE_PATH})
-INCLUDE(setalteraarmboardconfig)
+INCLUDE(setde10)
 INCLUDE(listdir)
 INCLUDE(geneclipsefilelist)
 INCLUDE(geneclipseincludelist)

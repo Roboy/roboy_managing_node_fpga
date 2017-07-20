@@ -24,88 +24,96 @@ INCLUDE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/options.cmake)
 SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -O0 -g")
 SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g")
 
-################################################################################
-# Setup project files and definitions
+OPTION(CFG_IP_STACK "Is an IP stack available (support of SDO/UDP)" OFF)
+OPTION(CFG_INCLUDE_MN_REDUNDANCY "Use MN redundancy functions (if compiled into the libraries)" OFF)
 
-SET(OBJDICT CiA401_CN)              # Set object dictionary to use
-FIND_OPLK_LIBRARY("cn")             # Find suitable openPOWERLINK library
+#==============================================================================
+# Dependencies
+#==============================================================================
+
+SET(OBJDICT CiA302-4_MN)        # Set object dictionary to use
+FIND_OPLK_LIBRARY("mn")         # Find suitable openPOWERLINK library
+
+# Eigen
+find_package(PkgConfig)
+pkg_check_modules(EIGEN3 REQUIRED eigen3)
+include_directories(${EIGEN3_INCLUDE_DIRS})
 
 # ros
-find_package(catkin REQUIRED COMPONENTS common_utilities roboy_communication_middleware std_msgs)
+find_package(catkin REQUIRED COMPONENTS roboy_communication_middleware roscpp std_msgs controller_manager common_utilities)
 include(findros)
+catkin_package( CATKIN_DEPENDS message_runtime roboy_communication_middleware common_utilities INCLUDE_DIRS include)
 include_directories(${catkin_INCLUDE_DIRS} )
-catkin_package( CATKIN_DEPENDS message_runtime common_utilities roboy_communication_middleware)
-include_directories(include/roboy_managing_node_fpga
-                    usr/include/arm-linux-gnueabihf
+
+# Set generic sources and include directories for this demo
+SET(SOURCES
+        src/main.cpp
+        src/myoMaster.cpp
+        ${COMMON_SOURCE_DIR}/obdcreate/obdcreate.c
+        ${COMMON_SOURCE_DIR}/eventlog/eventlog.c
+        ${COMMON_SOURCE_DIR}/eventlog/eventlogstring.c
+        ${COMMON_SOURCE_DIR}/system/system-linux.c
+        ${COMMON_SOURCE_DIR}/pcap/pcap-console.c
+        ${CONTRIB_SOURCE_DIR}/console/printlog.c
+        ${CONTRIB_SOURCE_DIR}/getopt/getopt.c
+        ${CONTRIB_SOURCE_DIR}/console/console-linux.c
+        ${OPLK_BASE_DIR}/apps/common/objdicts/CiA302-4_MN/obdpi.c
         )
+
+INCLUDE_DIRECTORIES(
+        include/
+        ${CMAKE_CURRENT_SOURCE_DIR}/../roboy_powerlink/powerlink/output
+        ${OPLK_BASE_DIR}/apps/common/objdicts/CiA302-4_MN
+        ${OPLK_BASE_DIR}/stack/proj/linux/liboplkmndrv-pcap
+)
 
 include(findpcap)
 
-# Set generic sources and include directories for this demo
-SET(SOURCE
-        src/main.c
-        src/app.c
-        src/event.c
-        ${CONTRIB_SOURCE_DIR}/console/printlog.c
-        ${CONTRIB_SOURCE_DIR}/getopt/getopt.c
-        ${COMMON_SOURCE_DIR}/eventlog/eventlog.c
-        ${COMMON_SOURCE_DIR}/eventlog/eventlogstring.c
-        ${COMMON_SOURCE_DIR}/obdcreate/obdcreate.c
-        ${COMMON_SOURCE_DIR}/arp/arp.c
-        ${OPLK_BASE_DIR}/apps/common/objdicts/CiA302-4_MN/obdpi.c
-    )
-
-SET(ALT_DEVICE_FAMILY soc_cv_av)
-add_definitions(-D${ALT_DEVICE_FAMILY})
-MESSAGE(STATUS "fpga include dir: $ENV{SOCEDS_DEST_ROOT}/ip/altera/hps/altera_hps/hwlib/${ALT_DEVICE_FAMILY}")
-MESSAGE(STATUS "objectdic dir: ${OPLK_BASE_DIR}/apps/common/objdicts/${OBJDICT}")
-INCLUDE_DIRECTORIES(
-    include/
-        $ENV{SOCEDS_DEST_ROOT}/ip/altera/hps/altera_hps/hwlib/${ALT_DEVICE_FAMILY}
-        $ENV{SOCEDS_DEST_ROOT}/ip/altera/hps/altera_hps/hwlib/include
-        $ENV{SOCEDS_DEST_ROOT}/ip/altera/hps/altera_hps/hwlib/include/${ALT_DEVICE_FAMILY}
-        ${CMAKE_CURRENT_SOURCE_DIR}/../roboy_powerlink/powerlink/output
-        ${CMAKE_CURRENT_SOURCE_DIR}/../roboy_managing_node/include
-        ${OPLK_BASE_DIR}/stack/proj/linux/liboplkmndrv-pcap
-        ${CMAKE_CURRENT_SOURCE_DIR}/../roboy_powerlink/openPowerLink/apps/common/objdicts/CiA302-4_MN
-        ${CMAKE_CURRENT_SOURCE_DIR}/../roboy_powerlink/openPowerLink/hardware/boards/de10-nano-soc/Nios_Access_DDR3/quartus
-    )
-
-# PResChaining is not supported by non-openMAC targets
-#ADD_DEFINITIONS(-DCONFIG_DLL_PRES_CHAINING_CN)
-ADD_DEFINITIONS(-DNMT_MAX_NODE_ID=0)
+ADD_DEFINITIONS(-DNMT_MAX_NODE_ID=254)
 ADD_DEFINITIONS(-DCONFIG_INCLUDE_PDO)
 ADD_DEFINITIONS(-DCONFIG_INCLUDE_SDO_ASND)
-ADD_DEFINITIONS(-DCONFIG_INCLUDE_MASND)
 
 IF(CFG_IP_STACK)
     ADD_DEFINITIONS(-DCONFIG_INCLUDE_IP)
     ADD_DEFINITIONS(-DCONFIG_INCLUDE_SDO_UDP)
 ENDIF(CFG_IP_STACK)
 
-IF(CFG_STORE_RESTORE)
-    ADD_DEFINITIONS(-DCONFIG_OBD_USE_STORE_RESTORE)
-ENDIF(CFG_STORE_RESTORE)
+ADD_DEFINITIONS(-DCONFIG_INCLUDE_CFM)
+
+IF(CFG_INCLUDE_MN_REDUNDANCY)
+    ADD_DEFINITIONS(-DCONFIG_INCLUDE_NMT_RMN)
+ENDIF(CFG_INCLUDE_MN_REDUNDANCY)
+
+#ADD_DEFINITIONS(-DCONFIG_OBD_USE_STORE_RESTORE)
+#ADD_DEFINITIONS(-DCONFIG_DLL_PRES_CHAINING_CN)
+#ADD_DEFINITIONS(-DCONFIG_INCLUDE_MASND)
 
 ################################################################################
 # Setup compile definitions depending on configuration
 
-# PCAP is used for directlink of userspace daemon
+# PCAP is used for directlink or userspace daemon
 IF (CFG_KERNEL_STACK_DIRECTLINK OR CFG_KERNEL_STACK_USERSPACE_DAEMON)
     ADD_DEFINITIONS(-DCONFIG_USE_PCAP)
-    SET (SOURCE ${SOURCE} ${COMMON_SOURCE_DIR}/pcap/pcap-console.c)
+    SET (DEMO_SOURCES ${DEMO_SOURCES} ${COMMON_SOURCE_DIR}/pcap/pcap-console.c)
 ENDIF (CFG_KERNEL_STACK_DIRECTLINK OR CFG_KERNEL_STACK_USERSPACE_DAEMON)
 
-# Setup compile definitions depending on configuration
 IF (CFG_KERNEL_STACK_DIRECTLINK)
-    UNSET (CFG_DEMO_CN_CONSOLE_USE_SYNCTHREAD CACHE)
+    UNSET (CFG_DEMO_MN_CONSOLE_USE_SYNCTHREAD CACHE)
     ADD_DEFINITIONS(-DCONFIG_KERNELSTACK_DIRECTLINK)
 ELSE (CFG_KERNEL_STACK_DIRECTLINK)
-    OPTION (CFG_DEMO_CN_CONSOLE_USE_SYNCTHREAD "Create separate thread for syncronous data exchange" ON)
-    IF (CFG_DEMO_CN_CONSOLE_USE_SYNCTHREAD)
+    OPTION (CFG_DEMO_MN_CONSOLE_USE_SYNCTHREAD "Create separate thread for syncronous data exchange" ON)
+    IF (CFG_DEMO_MN_CONSOLE_USE_SYNCTHREAD)
         ADD_DEFINITIONS(-DCONFIG_USE_SYNCTHREAD)
-    ENDIF (CFG_DEMO_CN_CONSOLE_USE_SYNCTHREAD)
+    ENDIF (CFG_DEMO_MN_CONSOLE_USE_SYNCTHREAD)
 ENDIF (CFG_KERNEL_STACK_DIRECTLINK)
+
+IF (CFG_KERNEL_STACK_PCIE_INTF)
+    ADD_DEFINITIONS(-D__LINUX_PCIE__)
+ENDIF()
+
+IF (CFG_KERNEL_STACK_ZYNQ_INTF)
+    ADD_DEFINITIONS(-D__LINUX_ZYNQ__)
+ENDIF()
 
 
 ################################################################################
@@ -119,17 +127,16 @@ ELSE()
     MESSAGE(FATAL_ERROR "System ${CMAKE_SYSTEM_NAME} is not supported!")
 ENDIF()
 
-################################################################################
+#==============================================================================
+# Application
+#==============================================================================
 
-################################################################################
-# Set the executable
-
-ADD_EXECUTABLE(roboy_managing_node_fpga ${SOURCE} ${DEMO_ARCH_SOURCES} )
+ADD_EXECUTABLE(roboy_managing_node_fpga ${SOURCES} ${DEMO_ARCH_SOURCES} )
 SET_PROPERTY(TARGET roboy_managing_node_fpga
              PROPERTY COMPILE_DEFINITIONS_DEBUG DEBUG;DEF_DEBUG_LVL=${CFG_DEBUG_LVL})
 OPLK_LINK_LIBRARIES(roboy_managing_node_fpga)
 add_dependencies(roboy_managing_node_fpga roboy_communication_middleware_gencpp)
-TARGET_LINK_LIBRARIES(roboy_managing_node_fpga ${pcap_LIBRARY} ${pcap_udp_LIBRARY} -lpthread -lrt ${ros_LIBRARIES})#
+TARGET_LINK_LIBRARIES(roboy_managing_node_fpga ${pcap_LIBRARY} -lpthread -lrt ${ros_LIBRARIES})#
 
 #==============================================================================
 # Installation
